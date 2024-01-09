@@ -4,7 +4,8 @@ const Abstractcsw = function Abstractcsw(options = {}) {
   const {
     additionalExclusionGroups = [],
     url = '',
-    propertyName = 'any'
+    metadataPropertyName = 'any',
+    layerExclusionProp
   } = options;
 
   const exclusionGroups = ['background', 'none'].concat(additionalExclusionGroups);
@@ -14,7 +15,8 @@ const Abstractcsw = function Abstractcsw(options = {}) {
   function isEligible(layer) {
     const hasAbstract = layer.get('abstract');
     const isExcluded = exclusionGroups.includes(layer.get('group'));
-    return !hasAbstract && !isExcluded;
+    const hasProperty = layer.get(layerExclusionProp);
+    return !hasAbstract && !isExcluded && !hasProperty;
   }
 
   function getEligibleLayers(layers) {
@@ -32,8 +34,8 @@ const Abstractcsw = function Abstractcsw(options = {}) {
 
     layerNames.forEach((layerName) => {
       filter += `
-              <ogc:PropertyIsEqualTo matchCase="false">
-                <ogc:PropertyName>${propertyName}</ogc:PropertyName>
+              <ogc:PropertyIsEqualTo matchCase="true">
+                <ogc:PropertyName>${metadataPropertyName}</ogc:PropertyName>
                 <ogc:Literal>${layerName}</ogc:Literal>
               </ogc:PropertyIsEqualTo>`;
     });
@@ -68,31 +70,51 @@ const Abstractcsw = function Abstractcsw(options = {}) {
       const eligibleLayers = getEligibleLayers(allLayers);
       if (!eligibleLayers.length) return;
 
-      const body = `
-      <csw:GetRecords
-      xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" service="CSW" version="2.0.2" resultType="results" maxRecords="500">
-      <csw:Query typeNames="csw:Record">
-        <csw:ElementSetName>full</csw:ElementSetName>
-        <csw:Constraint version="1.1.0">
-          ${buildFilter(eligibleLayers.map((layer) => layer.get('name')))}
-      </csw:Constraint>
-      </csw:Query>
-    </csw:GetRecords>`;
+      const eligibleLayersArrays = [];
+      eligibleLayers.forEach((_, index) => {
+        if (index % 20 === 0) {
+          eligibleLayersArrays.push(eligibleLayers.slice(index, index + 20));
+        }
+      });
 
-      const requestOpts = {
-        method: 'POST',
-        headers: {
-          'Content-type': 'application/xml'
-        },
-        body
-      };
-      const response = await fetch(url, requestOpts);
-      if (response.ok) {
-        const xml = await response.text();
+      if (!eligibleLayersArrays.length === 0) {
+        eligibleLayersArrays.push([eligibleLayers]);
+      }
+
+      const fetchResponses = await Promise.all(eligibleLayersArrays.map((layersArray) => {
+        const body = `
+        <csw:GetRecords
+        xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" service="CSW" version="2.0.2" resultType="results" maxRecords="500">
+        <csw:Query typeNames="csw:Record">
+          <csw:ElementSetName>full</csw:ElementSetName>
+          <csw:Constraint version="1.1.0">
+            ${buildFilter(layersArray.map((layer) => layer.get('name')))}
+        </csw:Constraint>
+        </csw:Query>
+        </csw:GetRecords>`;
+
+        const requestOpts = {
+          method: 'POST',
+          headers: {
+            'Content-type': 'application/xml'
+          },
+          body
+        };
+        return fetch(url, requestOpts);
+      }));
+
+      const responseXmls = await Promise.all(fetchResponses.map((response) => {
+        if (response.ok) {
+          return response.text();
+        } return '';
+      }));
+
+      responseXmls.forEach((xml) => {
+        if (!xml) return;
         const xmlDoc = new DOMParser().parseFromString(xml, 'text/xml');
         const records = xmlDoc.getElementsByTagName('csw:Record');
         setLayerAbstracts(records, eligibleLayers);
-      }
+      });
     }
   });
 };

@@ -8,8 +8,9 @@ It has been tested with a Geonetwork 3.10.x instance.
 
 #### Configuration options
 - `additionalExclusionGroups`: what additional group/s beyond `background` and `none` to not look for eligible layers in. An array of strings. Optional. 
-- `url`: a csw endpoint. Mandatory.
-- `propertyName`: what property name to match layer names with. Defaults to `any` which looks everywhere in a metadata record.
+- `url`: a csw endpoint. A string. Mandatory.
+- `metadataPropertyName`: what metadata record property name to match layer names with. Defaults to `any` which looks everywhere in a metadata record. A string. Optional.
+- `layerExclusionProp`: layer property that makes a layer ineligible (the plugin won't look for an abstract for it). A string. Optional.
 
 #### Example usage
 
